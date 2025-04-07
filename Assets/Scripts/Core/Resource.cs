@@ -39,11 +39,11 @@ namespace CamelSociety.Core
                 case ResourceType.RawMaterial:
                     return 20f;
                 case ResourceType.ProcessedFood:
-                case ResourceType.IndustrialProduct:
+                case ResourceType.ProcessedMaterial:
                     return 50f;
-                case ResourceType.MedicalSupply:
+                case ResourceType.Medicine:
                     return 100f;
-                case ResourceType.LuxuryItem:
+                case ResourceType.Luxury:
                     return 200f;
                 case ResourceType.Money:
                     return 1f;
@@ -79,7 +79,7 @@ namespace CamelSociety.Core
                    type == ResourceType.Water || 
                    type == ResourceType.Energy || 
                    type == ResourceType.ProcessedFood || 
-                   type == ResourceType.MedicalSupply;
+                   type == ResourceType.Medicine;
         }
 
         public float GetTotalValue()

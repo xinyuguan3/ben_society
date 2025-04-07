@@ -29,13 +29,13 @@ namespace CamelSociety.Core
                     decayRate = 0.5f;
                     priority = 1f;
                     break;
-                case NeedType.Shelter:
+                case NeedType.Sleep:
                     maxValue = 100f;
                     minValue = 0f;
                     decayRate = 0.1f;
                     priority = 0.9f;
                     break;
-                case NeedType.Safety:
+                case NeedType.Health:
                     maxValue = 100f;
                     minValue = 0f;
                     decayRate = 0.2f;

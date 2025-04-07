@@ -127,12 +127,23 @@ namespace CamelSociety.Core
         public float hunger;
         public float energy;
         public float happiness;
+        public float needUpdateInterval = 1f;
+        private float lastNeedUpdateTime;
+        private Building targetConsumptionBuilding;
+        private NeedType currentNeed;
+        private float consumptionCooldown = 2f;
+        private float lastConsumptionTime;
         #endregion
 
         #region 资源系统
         [Header("Resources")]
         public Dictionary<ResourceType, Resource> resources = new Dictionary<ResourceType, Resource>();
-        private Dictionary<ResourceType, float> inventory = new Dictionary<ResourceType, float>();
+        public Dictionary<ResourceType, float> inventory = new Dictionary<ResourceType, float>();
+        public float resourceCapacity = 1000f;
+        private ResourceConversionRule currentConversion;
+        private float conversionProgress = 0f;
+        private float lastTradeTime = 0f;
+        private float tradeInterval = 1f;
         #endregion
 
         #region 行为系统
@@ -143,7 +154,6 @@ namespace CamelSociety.Core
         public float interactionRange = 1.5f;
         public float wanderRadius = 10f;
         private State currentState = State.Wandering;
-        private GameObject targetResource;
         private Vector3 targetPosition;
         private float minDistanceToTarget = 0.5f;
         #endregion
@@ -175,6 +185,23 @@ namespace CamelSociety.Core
         public int maxRelations = 50;             // 最大关系数量
         private List<string> recentInteractions = new List<string>(); // 最近互动记录
         #endregion
+
+        [Header("Career System")]
+        public string currentCareerId;
+        public float careerExperience;
+        public float jobSatisfaction;
+        public Dictionary<string, float> skillLevels = new Dictionary<string, float>();
+
+        private float careerUpdateInterval = 7f; // 每7天检查一次职业发展
+        private float lastCareerUpdateTime;
+
+        [Header("Resource Collection")]
+        public float resourceCollectionSpeed = 1f;
+        public float carryCapacity = 50f;
+        private ResourceObject targetResource;
+        public Building assignedBuilding;
+        private float lastResourceCheckTime;
+        private float resourceCheckInterval = 1f;
 
         private void Awake()
         {
@@ -249,7 +276,6 @@ namespace CamelSociety.Core
             InitializePersonality();
             InitializeSkills();
             InitializeResources();
-            InitializeInventory();
             
             // 设置外观
             CreateVisuals();
@@ -259,13 +285,43 @@ namespace CamelSociety.Core
 
             // 初始化社会关系网络
             InitializeSocialNetwork();
+
+            // 初始化职业系统
+            InitializeCareer();
         }
 
         private void InitializeInventory()
         {
-            foreach (ResourceType resource in System.Enum.GetValues(typeof(ResourceType)))
+            inventory.Clear();
+            foreach (ResourceType type in System.Enum.GetValues(typeof(ResourceType)))
             {
-                inventory[resource] = 0f;
+                inventory[type] = 0f;
+            }
+
+            // 初始资源
+            switch (socialClass)
+            {
+                case SocialClass.WorkingClass:
+                    AddResource(ResourceType.Food, Random.Range(10f, 30f));
+                    AddResource(ResourceType.Money, Random.Range(100f, 300f));
+                    break;
+                case SocialClass.MiddleClass:
+                    AddResource(ResourceType.Food, Random.Range(30f, 60f));
+                    AddResource(ResourceType.Money, Random.Range(500f, 1000f));
+                    AddResource(ResourceType.Electronics, Random.Range(1f, 3f));
+                    break;
+                case SocialClass.UpperClass:
+                    AddResource(ResourceType.Food, Random.Range(50f, 100f));
+                    AddResource(ResourceType.Money, Random.Range(2000f, 5000f));
+                    AddResource(ResourceType.Electronics, Random.Range(2f, 5f));
+                    AddResource(ResourceType.Vehicle, 1f);
+                    break;
+                case SocialClass.RulingClass:
+                    AddResource(ResourceType.Food, Random.Range(100f, 200f));
+                    AddResource(ResourceType.Money, Random.Range(10000f, 20000f));
+                    AddResource(ResourceType.Electronics, Random.Range(5f, 10f));
+                    AddResource(ResourceType.Artwork, Random.Range(1f, 3f));
+                    break;
             }
         }
 
@@ -347,28 +403,175 @@ namespace CamelSociety.Core
             UpdateBehavior();
             UpdateRelations(Time.deltaTime);
             UpdateIdeology();
+            UpdateCareer();
+            UpdateResourceCollection();
+
+            // 如果到达了目标建筑，存放资源
+            if (assignedBuilding != null && Vector3.Distance(transform.position, assignedBuilding.transform.position) <= 1f)
+            {
+                DepositResources();
+            }
+
+            // 如果到达了目标建筑，进行消费
+            if (targetConsumptionBuilding != null && 
+                Vector3.Distance(transform.position, targetConsumptionBuilding.transform.position) <= 1f)
+            {
+                ConsumeAtBuilding();
+            }
         }
 
         private void UpdateNeeds()
         {
-            foreach (var need in needs.Values)
+            if (Time.time - lastNeedUpdateTime < needUpdateInterval)
+                return;
+
+            lastNeedUpdateTime = Time.time;
+
+            // 更新所有需求值
+            needs[NeedType.Food].value = Mathf.Min(needs[NeedType.Food].value + 2f * needUpdateInterval, 100f);
+            needs[NeedType.Sleep].value = Mathf.Max(needs[NeedType.Sleep].value - 1f * needUpdateInterval, 0f);
+            needs[NeedType.Entertainment].value = Mathf.Max(needs[NeedType.Entertainment].value - 1.5f * needUpdateInterval, 0f);
+            needs[NeedType.Social].value = Mathf.Max(needs[NeedType.Social].value - 1f * needUpdateInterval, 0f);
+            needs[NeedType.Health].value = Mathf.Max(needs[NeedType.Health].value - 0.5f * needUpdateInterval, 0f);
+            needs[NeedType.Culture].value = Mathf.Max(needs[NeedType.Culture].value - 0.8f * needUpdateInterval, 0f);
+
+            // 检查是否需要消费
+            if (Time.time - lastConsumptionTime > consumptionCooldown)
             {
-                need.Update(Time.deltaTime);
+                CheckConsumptionNeeds();
             }
+        }
 
-            // 基础需求更新
-            hunger = Mathf.Min(hunger + Time.deltaTime * 0.1f, 100f);
-            energy = Mathf.Max(energy - Time.deltaTime * 0.05f, 0f);
-            happiness = Mathf.Lerp(happiness, 50f, Time.deltaTime * 0.01f);
+        private void CheckConsumptionNeeds()
+        {
+            if (targetConsumptionBuilding != null)
+                return;
 
-            if (hunger > 80f)
+            // 获取最迫切的需求
+            var mostUrgentNeed = GetMostUrgentNeed();
+            if (mostUrgentNeed.Value.value > GetNeedThreshold(mostUrgentNeed.Key))
             {
-                if (ConsumeResource(ResourceType.Food, 10f))
+                currentNeed = mostUrgentNeed.Key;
+                FindConsumptionBuilding(currentNeed);
+            }
+        }
+
+        private KeyValuePair<NeedType, Need> GetMostUrgentNeed()
+        {
+            return needs.OrderByDescending(n => n.Value.value).First();
+        }
+
+        private float GetNeedThreshold(NeedType type)
+        {
+            return type switch
+            {
+                NeedType.Food => 70f,
+                NeedType.Sleep => 30f,
+                NeedType.Entertainment => 30f,
+                NeedType.Social => 40f,
+                NeedType.Health => 40f,
+                NeedType.Culture => 50f,
+                _ => 50f
+            };
+        }
+
+        private void FindConsumptionBuilding(NeedType need)
+        {
+            Building[] buildings = FindObjectsOfType<Building>();
+            float nearestDistance = float.MaxValue;
+            Building nearestBuilding = null;
+
+            foreach (Building building in buildings)
+            {
+                if (IsBuildingSuitableForNeed(building, need))
                 {
-                    hunger -= 30f;
-                    happiness += 5f;
+                    float distance = Vector3.Distance(transform.position, building.transform.position);
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestBuilding = building;
+                    }
                 }
             }
+
+            if (nearestBuilding != null)
+            {
+                targetConsumptionBuilding = nearestBuilding;
+                Move(nearestBuilding.transform.position);
+            }
+        }
+
+        private bool IsBuildingSuitableForNeed(Building building, NeedType need)
+        {
+            return (building.type, need) switch
+            {
+                (BuildingType.Restaurant, NeedType.Food) => building.HasResource(ResourceType.ProcessedFood,1f),
+                (BuildingType.Hospital, NeedType.Health) => true,
+                (BuildingType.Entertainment, NeedType.Entertainment) => true,
+                (BuildingType.CulturalCenter, NeedType.Culture) => true,
+                (BuildingType.SocialCenter, NeedType.Social) => true,
+                _ => false
+            };
+        }
+
+        private void ConsumeAtBuilding()
+        {
+            if (targetConsumptionBuilding == null || currentNeed == NeedType.None)
+                return;
+
+            // 根据需求类型消费资源
+            switch (currentNeed)
+            {
+                case NeedType.Food:
+                    if (targetConsumptionBuilding.type == BuildingType.Restaurant)
+                    {
+                        float foodAmount = 20f;
+                        if (targetConsumptionBuilding.RequestResource(ResourceType.ProcessedFood, foodAmount) > 0)
+                        {
+                            needs[NeedType.Food].value = Mathf.Max(0, needs[NeedType.Food].value - 40f);
+                            happiness += 10f;
+                        }
+                    }
+                    break;
+
+                case NeedType.Health:
+                    if (targetConsumptionBuilding.type == BuildingType.Hospital)
+                    {
+                        needs[NeedType.Health].value = Mathf.Min(needs[NeedType.Health].value + 30f, 100f);
+                        happiness += 5f;
+                    }
+                    break;
+
+                case NeedType.Entertainment:
+                    if (targetConsumptionBuilding.type == BuildingType.Entertainment)
+                    {
+                        needs[NeedType.Entertainment].value = Mathf.Min(needs[NeedType.Entertainment].value + 40f, 100f);
+                        happiness += 15f;
+                    }
+                    break;
+
+                case NeedType.Culture:
+                    if (targetConsumptionBuilding.type == BuildingType.CulturalCenter)
+                    {
+                        needs[NeedType.Culture].value = Mathf.Min(needs[NeedType.Culture].value + 35f, 100f);
+                        happiness += 12f;
+                        education += 2f;
+                    }
+                    break;
+
+                case NeedType.Social:
+                    if (targetConsumptionBuilding.type == BuildingType.SocialCenter)
+                    {
+                        needs[NeedType.Social].value = Mathf.Min(needs[NeedType.Social].value + 30f, 100f);
+                        happiness += 8f;
+                    }
+                    break;
+            }
+
+            // 重置消费相关变量
+            lastConsumptionTime = Time.time;
+            targetConsumptionBuilding = null;
+            currentNeed = NeedType.None;
         }
 
         private void UpdateBehavior()
@@ -424,7 +627,7 @@ namespace CamelSociety.Core
         {
             Collider[] colliders = Physics.OverlapSphere(transform.position, resourceDetectionRange);
             float closestDistance = float.MaxValue;
-            GameObject closestResource = null;
+            ResourceObject closestResource = null;
 
             foreach (Collider collider in colliders)
             {
@@ -435,7 +638,7 @@ namespace CamelSociety.Core
                     if (distance < closestDistance)
                     {
                         closestDistance = distance;
-                        closestResource = collider.gameObject;
+                        closestResource = resource;
                     }
                 }
             }
@@ -490,6 +693,11 @@ namespace CamelSociety.Core
             }
         }
 
+        private void Move(Vector3 target)
+        {
+            navMeshAgent.SetDestination(target);
+        }
+
         private void SetRandomTarget()
         {
             float range = wanderRadius * 0.8f;
@@ -542,37 +750,149 @@ namespace CamelSociety.Core
         }
 
         #region 资源管理
+
+        public Dictionary<ResourceType, float> GetInventory()
+        {
+            return inventory;
+        }
+
+        public bool HasResource(ResourceType type, float amount)
+        {
+            return inventory.ContainsKey(type) && inventory[type] >= amount;
+        }
+
         public void AddResource(ResourceType type, float amount)
         {
-            if (inventory.ContainsKey(type))
+            if (!inventory.ContainsKey(type))
             {
-                inventory[type] += amount;
+                inventory[type] = 0;
+            }
+
+            var resourceDef = ResourceSystem.Instance.resourceDefinitions[type];
+            float availableSpace = resourceDef.maxStorage - inventory[type];
+            float actualAmount = Mathf.Min(amount, availableSpace);
+
+            inventory[type] += actualAmount;
+
+            // 更新市场数据
+            if (ResourceSystem.Instance.market.ContainsKey(type))
+            {
+                ResourceSystem.Instance.market[type].supply += actualAmount;
             }
         }
 
         public bool ConsumeResource(ResourceType type, float amount)
         {
-            if (inventory.ContainsKey(type) && inventory[type] >= amount)
+            if (HasResource(type, amount))
             {
                 inventory[type] -= amount;
+                
+                // 更新市场数据
+                if (ResourceSystem.Instance.market.ContainsKey(type))
+                {
+                    ResourceSystem.Instance.market[type].demand += amount;
+                }
+                
                 return true;
             }
             return false;
         }
 
-        public Dictionary<ResourceType, float> GetInventory()
+        private void UpdateResources()
         {
-            return new Dictionary<ResourceType, float>(inventory);
+            // 资源自然损耗
+            foreach (var resource in inventory.Keys.ToList())
+            {
+                var definition = ResourceSystem.Instance.resourceDefinitions[resource];
+                float deterioration = definition.deteriorationRate * Time.deltaTime;
+                inventory[resource] = Mathf.Max(0, inventory[resource] - deterioration);
+            }
+
+            // 更新资源转换进度
+            if (currentConversion != null)
+            {
+                conversionProgress += Time.deltaTime;
+                if (conversionProgress >= currentConversion.conversionTime)
+                {
+                    CompleteResourceConversion();
+                }
+            }
+            else
+            {
+                // 尝试开始新的资源转换
+                TryStartResourceConversion();
+            }
+
+            // 尝试交易
+            if (Time.time >= lastTradeTime + tradeInterval)
+            {
+                TryTrade();
+                lastTradeTime = Time.time;
+            }
+        }
+
+        private void TryStartResourceConversion()
+        {
+            foreach (var rule in ResourceSystem.Instance.conversionRules)
+            {
+                if (ResourceSystem.Instance.CanConvert(this, rule))
+                {
+                    currentConversion = rule;
+                    conversionProgress = 0f;
+                    break;
+                }
+            }
+        }
+
+        private void CompleteResourceConversion()
+        {
+            if (currentConversion != null)
+            {
+                ResourceSystem.Instance.ConvertResources(this, currentConversion);
+                currentConversion = null;
+                conversionProgress = 0f;
+            }
+        }
+
+        private void TryTrade()
+        {
+            // 寻找附近的交易对象
+            var nearbyAgents = Physics.OverlapSphere(transform.position, 5f)
+                .Select(c => c.GetComponent<Agent>())
+                .Where(a => a != null && a != this)
+                .ToList();
+
+            foreach (var other in nearbyAgents)
+            {
+                // 检查是否有可以交易的资源
+                foreach (var resource in inventory)
+                {
+                    if (resource.Value > 0)
+                    {
+                        float price = ResourceSystem.Instance.GetResourcePrice(resource.Key);
+                        float amount = Mathf.Min(resource.Value * 0.1f, 10f); // 交易10%的资源，最多10单位
+
+                        if (other.HasResource(ResourceType.Money, price * amount))
+                        {
+                            ResourceSystem.Instance.Trade(this, other, resource.Key, amount);
+                            break;
+                        }
+                    }
+                }
+            }
         }
         #endregion
 
         #region 社交系统
         protected virtual void InitializeNeeds()
         {
-            foreach (NeedType needType in System.Enum.GetValues(typeof(NeedType)))
-            {
-                needs[needType] = new Need(needType);
-            }
+            // 初始化基本需求
+            needs[NeedType.Food].value = Random.Range(20f, 40f);      // 饥饿度
+            needs[NeedType.Sleep].value = Random.Range(60f, 80f);      // 能量
+            needs[NeedType.Entertainment].value = Random.Range(40f, 60f); // 娱乐需求
+            needs[NeedType.Social].value = Random.Range(30f, 70f);      // 社交需求
+            needs[NeedType.Health].value = Random.Range(70f, 90f);      // 健康
+            needs[NeedType.Culture].value = Random.Range(40f, 60f);     // 文化需求
         }
 
         protected virtual void InitializePersonality()
@@ -764,5 +1084,362 @@ namespace CamelSociety.Core
             }
         }
         #endregion
+
+        private void InitializeCareer()
+        {
+            // 根据DNA和社会背景选择初始职业
+            float educationLevel = dna.personalityTraits["intelligence"];
+            float ambition = dna.personalityTraits["ambition"];
+            
+            // 初始化基础技能
+            skillLevels["physical_labor"] = Random.Range(0.5f, 1.5f);
+            skillLevels["communication"] = Random.Range(0.5f, 1.5f);
+            skillLevels["problem_solving"] = Random.Range(0.5f, 1.5f);
+            
+            // 根据教育水平添加额外技能
+            if (educationLevel > 0.6f)
+            {
+                skillLevels["technology"] = Random.Range(0.3f, 1.0f);
+                skillLevels["management"] = Random.Range(0.3f, 1.0f);
+            }
+
+            // 设置创新驱动力和文化认同
+            innovationDrive = (dna.personalityTraits["openness"] + dna.personalityTraits["intelligence"]) / 2f;
+            culturalIdentity = Random.Range(0.3f, 1.0f);
+
+            // 选择初始职业
+            SelectInitialCareer();
+        }
+
+        private void SelectInitialCareer()
+        {
+            // 根据个人特质选择适合的初始职业
+            float education = dna.personalityTraits["intelligence"];
+            float social = dna.personalityTraits["extraversion"];
+            
+            if (education > 0.7f)
+            {
+                currentCareerId = "programmer"; // 高教育水平选择技术职业
+            }
+            else if (social > 0.7f)
+            {
+                currentCareerId = "salesperson"; // 高社交能力选择服务业
+            }
+            else
+            {
+                currentCareerId = "factory_worker"; // 默认选择工业职业
+            }
+
+            careerExperience = 0f;
+            jobSatisfaction = Random.Range(0.5f, 0.8f);
+        }
+
+        public void UpdateCareer()
+        {
+            if (Time.time - lastCareerUpdateTime < careerUpdateInterval)
+                return;
+
+            lastCareerUpdateTime = Time.time;
+
+            // 增加职业经验
+            careerExperience += Random.Range(0.1f, 0.3f);
+
+            // 更新技能水平
+            foreach (var skill in skillLevels.Keys.ToList())
+            {
+                skillLevels[skill] += Random.Range(0.01f, 0.05f) * jobSatisfaction;
+            }
+
+            // 检查是否可以晋升
+            string nextCareerId;
+            if (CareerSystem.Instance.CanPromote(this, currentCareerId, out nextCareerId))
+            {
+                ConsiderPromotion(nextCareerId);
+            }
+
+            // 更新工作满意度
+            UpdateJobSatisfaction();
+        }
+
+        private void ConsiderPromotion(string newCareerId)
+        {
+            var currentCareer = CareerSystem.Instance.careerDefinitions[currentCareerId];
+            var newCareer = CareerSystem.Instance.careerDefinitions[newCareerId];
+
+            // 计算接受晋升的概率
+            float acceptanceChance = CalculatePromotionAcceptance(currentCareer, newCareer);
+
+            if (Random.value < acceptanceChance)
+            {
+                // 接受晋升
+                currentCareerId = newCareerId;
+                careerExperience = 0f;
+                jobSatisfaction = Random.Range(0.7f, 1.0f);
+                
+                // 记录晋升事件
+                Debug.Log($"Agent {gameObject.name} promoted to {newCareer.name}");
+            }
+        }
+
+        private float CalculatePromotionAcceptance(CareerData current, CareerData next)
+        {
+            float baseChance = 0.7f; // 基础接受概率
+
+            // 根据个性特征调整概率
+            baseChance += dna.personalityTraits["ambition"] * 0.2f;
+            baseChance += dna.personalityTraits["openness"] * 0.1f;
+
+            // 根据薪资增长调整概率
+            float salaryIncrease = (next.baseSalary - current.baseSalary) / current.baseSalary;
+            baseChance += salaryIncrease * 0.2f;
+
+            // 根据社会地位变化调整概率
+            float statusChange = (next.socialStatus - current.socialStatus) / current.socialStatus;
+            baseChance += statusChange * 0.1f;
+
+            return Mathf.Clamp01(baseChance);
+        }
+
+        private void UpdateJobSatisfaction()
+        {
+            var career = CareerSystem.Instance.careerDefinitions[currentCareerId];
+            
+            // 基于多个因素更新工作满意度
+            float satisfactionDelta = 0;
+
+            // 技能匹配度对满意度的影响
+            float skillMatch = CalculateSkillMatch(career);
+            satisfactionDelta += (skillMatch - 0.5f) * 0.1f;
+
+            // 个性特征对满意度的影响
+            float personalityMatch = CalculatePersonalityMatch(career);
+            satisfactionDelta += (personalityMatch - 0.5f) * 0.1f;
+
+            // 社会地位对满意度的影响
+            satisfactionDelta += (career.socialStatus / 100f - 0.5f) * 0.05f;
+
+            // 更新满意度
+            jobSatisfaction = Mathf.Clamp01(jobSatisfaction + satisfactionDelta);
+        }
+
+        private float CalculateSkillMatch(CareerData career)
+        {
+            float totalMatch = 0f;
+            int skillCount = 0;
+
+            foreach (var skillReq in career.skillLevels)
+            {
+                if (skillLevels.ContainsKey(skillReq.Key))
+                {
+                    totalMatch += Mathf.Min(1f, skillLevels[skillReq.Key] / skillReq.Value);
+                    skillCount++;
+                }
+            }
+
+            return skillCount > 0 ? totalMatch / skillCount : 0f;
+        }
+
+        private float CalculatePersonalityMatch(CareerData career)
+        {
+            float match = 0.5f; // 基础匹配度
+
+            // 根据职业领域调整匹配度
+            switch (career.field)
+            {
+                case CareerField.Art:
+                    match += dna.personalityTraits["openness"] * 0.3f;
+                    break;
+                case CareerField.Technology:
+                    match += dna.personalityTraits["intelligence"] * 0.3f;
+                    break;
+                case CareerField.Service:
+                    match += dna.personalityTraits["extraversion"] * 0.3f;
+                    break;
+                // 添加更多职业领域的匹配规则
+            }
+
+            return Mathf.Clamp01(match);
+        }
+
+        public float GetSkillLevel(string skillName)
+        {
+            return skillLevels.ContainsKey(skillName) ? skillLevels[skillName] : 0f;
+        }
+
+        public void AddExperience(string skillName, float amount)
+        {
+            if (!skillLevels.ContainsKey(skillName))
+            {
+                skillLevels[skillName] = 0f;
+            }
+            skillLevels[skillName] += amount;
+        }
+
+        private void UpdateResourceCollection()
+        {
+            if (Time.time - lastResourceCheckTime < resourceCheckInterval)
+                return;
+
+            lastResourceCheckTime = Time.time;
+
+            // 如果没有目标资源，寻找新的资源
+            if (targetResource == null || !targetResource.CanBeHarvested())
+            {
+                FindNewResource();
+            }
+
+            // 如果有目标资源，进行收集
+            if (targetResource != null && targetResource.CanBeHarvested())
+            {
+                // 移动到资源位置
+                Vector3 resourcePosition = targetResource.transform.position;
+                if (Vector3.Distance(transform.position, resourcePosition) > 1f)
+                {
+                    Move(resourcePosition);
+                }
+                else
+                {
+                    // 收集资源
+                    CollectResource();
+                }
+            }
+
+            // 如果背包接近满了，寻找建筑存放资源
+            if (IsInventoryNearFull())
+            {
+                FindBuildingForDeposit();
+            }
+        }
+
+        private void FindNewResource()
+        {
+            Collider[] colliders = Physics.OverlapSphere(transform.position, resourceDetectionRange);
+            float nearestDistance = float.MaxValue;
+            ResourceObject nearestResource = null;
+
+            foreach (Collider collider in colliders)
+            {
+                ResourceObject resource = collider.GetComponent<ResourceObject>();
+                if (resource != null && resource.CanBeHarvested())
+                {
+                    float distance = Vector3.Distance(transform.position, resource.transform.position);
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestResource = resource;
+                    }
+                }
+            }
+
+            if (nearestResource != null)
+            {
+                targetResource = nearestResource;
+                targetResource.SetHarvestState(true);
+            }
+        }
+
+        private void CollectResource()
+        {
+            if (targetResource == null)
+                return;
+
+            float spaceAvailable = carryCapacity - GetTotalInventoryWeight();
+            if (spaceAvailable <= 0)
+                return;
+
+            float collected = targetResource.Harvest(resourceCollectionSpeed * Time.deltaTime);
+            if (collected > 0)
+            {
+                // 添加到库存
+                if (!inventory.ContainsKey(targetResource.type))
+                {
+                    inventory[targetResource.type] = 0f;
+                }
+                inventory[targetResource.type] += collected;
+
+                // 如果资源已经采集完或背包满了，重置目标
+                if (targetResource.amount <= 0 || IsInventoryNearFull())
+                {
+                    targetResource.SetHarvestState(false);
+                    targetResource = null;
+                }
+            }
+        }
+
+        private float GetTotalInventoryWeight()
+        {
+            float total = 0f;
+            foreach (var item in inventory)
+            {
+                total += item.Value;
+            }
+            return total;
+        }
+
+        private bool IsInventoryNearFull()
+        {
+            return GetTotalInventoryWeight() >= carryCapacity * 0.8f;
+        }
+
+        private void FindBuildingForDeposit()
+        {
+            if (assignedBuilding != null)
+                return;
+
+            // 寻找最近的可以接收资源的建筑
+            Building[] buildings = FindObjectsOfType<Building>();
+            float nearestDistance = float.MaxValue;
+            Building nearestBuilding = null;
+
+            foreach (Building building in buildings)
+            {
+                // 检查建筑是否可以接收我们的资源
+                bool canAcceptResources = false;
+                foreach (var item in inventory)
+                {
+                    if (item.Value > 0 && building.CanAcceptResource(item.Key, item.Value))
+                    {
+                        canAcceptResources = true;
+                        break;
+                    }
+                }
+
+                if (canAcceptResources)
+                {
+                    float distance = Vector3.Distance(transform.position, building.transform.position);
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestBuilding = building;
+                    }
+                }
+            }
+
+            if (nearestBuilding != null)
+            {
+                assignedBuilding = nearestBuilding;
+                // 移动到建筑位置
+                Move(nearestBuilding.transform.position);
+            }
+        }
+
+        private void DepositResources()
+        {
+            if (assignedBuilding == null)
+                return;
+
+            // 尝试存放所有资源
+            foreach (var item in inventory.ToList())
+            {
+                if (item.Value > 0 && assignedBuilding.CanAcceptResource(item.Key, item.Value))
+                {
+                    assignedBuilding.AddResource(item.Key, item.Value);
+                    inventory[item.Key] = 0f;
+                }
+            }
+
+            // 完成存放后重置目标建筑
+            assignedBuilding = null;
+        }
     }
 } 

@@ -31,11 +31,18 @@ namespace CamelSociety.Core
         public int initialPopulation = 10;
         public float simulationSpeed = 0.1f;
 
-        [Header("Resource Settings")]
-        public float resourceSpawnInterval = 5f;
-        public float resourceSpawnRange = 10f;
-        public List<ResourceType> availableResources;
+        [Header("Resource System")]
+        public float resourceSpawnRange = 50f;
         public Material resourceMat;
+        public List<ResourceType> availableResources;
+        private Dictionary<ResourceType, List<GameObject>> resourceObjects = new Dictionary<ResourceType, List<GameObject>>();
+        private Dictionary<BuildingType, List<GameObject>> buildings = new Dictionary<BuildingType, List<GameObject>>();
+
+        [Header("Building Settings")]
+        public GameObject restaurantPrefab;
+        public GameObject factoryPrefab;
+        public GameObject farmPrefab;
+        public float buildingSpacing = 10f;
 
         [Header("Debug")]
         public bool showDebugInfo = true;
@@ -91,7 +98,7 @@ namespace CamelSociety.Core
             Debug.Log("SocietyManager Start");
             InitializeSociety();
             InitializeResources();
-            InitializeSocietyStatistics();
+            // InitializeSocietyStatistics();
         }
 
         private void Update()
@@ -141,33 +148,180 @@ namespace CamelSociety.Core
 
         private void InitializeResources()
         {
-            Debug.Log("Initializing Resources");
-            if (availableResources == null)
-                availableResources = new List<ResourceType>();
-
-            availableResources.Clear();
-
-            foreach (ResourceType resource in System.Enum.GetValues(typeof(ResourceType)))
+            // 初始化资源对象字典
+            foreach (ResourceType type in System.Enum.GetValues(typeof(ResourceType)))
             {
-                if (!availableResources.Contains(resource))
-                    availableResources.Add(resource);
+                resourceObjects[type] = new List<GameObject>();
             }
 
-            for (int i = 0; i < 10; i++)
+            // 初始化建筑字典
+            foreach (BuildingType type in System.Enum.GetValues(typeof(BuildingType)))
             {
-                SpawnResource();
+                buildings[type] = new List<GameObject>();
             }
 
-            Debug.Log($"Resources initialized with {availableResources.Count} types");
+            // 生成初始资源
+            SpawnInitialResources();
+            
+            // 建造初始建筑
+            ConstructInitialBuildings();
         }
 
-        private void InitializeSocietyStatistics()
+        private void SpawnInitialResources()
         {
-            // 初始化社会意识形态分布
-            foreach (IdeologyType ideology in System.Enum.GetValues(typeof(IdeologyType)))
+            // 为每种资源类型生成多个资源点
+            foreach (ResourceType resourceType in availableResources)
             {
-                societyIdeologies[ideology] = 50f; // 初始均衡分布
+                int resourceCount = GetInitialResourceCount(resourceType);
+                for (int i = 0; i < resourceCount; i++)
+                {
+                    SpawnResourceOfType(resourceType, GetResourceSpawnPosition(resourceType));
+                }
             }
+        }
+
+        private int GetInitialResourceCount(ResourceType type)
+        {
+            // 根据资源类型返回初始数量
+            return type switch
+            {
+                ResourceType.Food => 15,    // 食物资源较多
+                ResourceType.Wood => 10,    // 木材资源适中
+                ResourceType.Stone => 8,    // 石材资源较少
+                ResourceType.Metal => 5,     // 金属资源较少
+                ResourceType.Gold => 3,     // 金矿很少
+                _ => 5
+            };
+        }
+
+        private Vector3 GetResourceSpawnPosition(ResourceType type)
+        {
+            // 根据资源类型决定生成位置（可以实现特定资源在特定区域生成）
+            float angle = Random.Range(0f, 360f);
+            float radius = Random.Range(10f, resourceSpawnRange);
+            
+            return new Vector3(
+                Mathf.Cos(angle * Mathf.Deg2Rad) * radius,
+                0.5f,
+                Mathf.Sin(angle * Mathf.Deg2Rad) * radius
+            );
+        }
+
+        private void SpawnResourceOfType(ResourceType type, Vector3 position)
+        {
+            GameObject resourceObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            resourceObj.name = $"Resource_{type}";
+            resourceObj.transform.SetParent(transform);
+            resourceObj.transform.position = position;
+            resourceObj.transform.localScale = Vector3.one * 0.5f;
+
+            // 设置材质和颜色
+            Renderer renderer = resourceObj.GetComponent<Renderer>();
+            if (renderer)
+            {
+                Material material = new Material(resourceMat);
+                material.color = GetResourceColor(type);
+                renderer.material = material;
+            }
+
+            // 添加资源组件
+            ResourceObject resourceComponent = resourceObj.AddComponent<ResourceObject>();
+            resourceComponent.type = type;
+            resourceComponent.amount = GetInitialResourceAmount(type);
+            resourceComponent.regenerationRate = GetResourceRegenerationRate(type);
+            resourceComponent.maxAmount = GetResourceMaxAmount(type);
+
+            // 添加到资源列表
+            resourceObjects[type].Add(resourceObj);
+        }
+
+        private Color GetResourceColor(ResourceType type)
+        {
+            return type switch
+            {
+                ResourceType.Food => Color.green,
+                ResourceType.Wood => new Color(0.5f, 0.3f, 0.2f),
+                ResourceType.Stone => Color.gray,
+                ResourceType.Metal => Color.blue,
+                ResourceType.Gold => Color.yellow,
+                ResourceType.ProcessedFood => new Color(1f, 0.8f, 0.2f),
+                ResourceType.Furniture => new Color(0.8f, 0.6f, 0.4f),
+                ResourceType.Tools => Color.cyan,
+                _ => Color.white
+            };
+        }
+
+        private float GetInitialResourceAmount(ResourceType type)
+        {
+            return type switch
+            {
+                ResourceType.Food => Random.Range(50f, 100f),
+                ResourceType.Wood => Random.Range(80f, 150f),
+                ResourceType.Stone => Random.Range(100f, 200f),
+                ResourceType.Metal => Random.Range(30f, 60f),
+                ResourceType.Gold => Random.Range(10f, 20f),
+                _ => Random.Range(20f, 50f)
+            };
+        }
+
+        private float GetResourceRegenerationRate(ResourceType type)
+        {
+            return type switch
+            {
+                ResourceType.Food => 0.5f,    // 食物较快恢复
+                ResourceType.Wood => 0.3f,    // 木材中等恢复
+                ResourceType.Stone => 0.1f,   // 石材慢恢复
+                ResourceType.Metal => 0.05f,   // 金属很慢恢复
+                ResourceType.Gold => 0.02f,   // 金矿极慢恢复
+                _ => 0.1f
+            };
+        }
+
+        private float GetResourceMaxAmount(ResourceType type)
+        {
+            return type switch
+            {
+                ResourceType.Food => 200f,
+                ResourceType.Wood => 300f,
+                ResourceType.Stone => 400f,
+                ResourceType.Metal => 100f,
+                ResourceType.Gold => 50f,
+                _ => 100f
+            };
+        }
+
+        private void ConstructInitialBuildings()
+        {
+            // 建造初始建筑
+            ConstructBuilding(BuildingType.Restaurant, new Vector3(-20f, 0f, -20f));
+            ConstructBuilding(BuildingType.Factory, new Vector3(20f, 0f, -20f));
+            ConstructBuilding(BuildingType.Farm, new Vector3(0f, 0f, 20f));
+        }
+
+        private void ConstructBuilding(BuildingType type, Vector3 position)
+        {
+            GameObject buildingPrefab = GetBuildingPrefab(type);
+            if (buildingPrefab == null) return;
+
+            GameObject building = Instantiate(buildingPrefab, position, Quaternion.identity, transform);
+            building.name = $"Building_{type}";
+
+            Building buildingComponent = building.AddComponent<Building>();
+            buildingComponent.type = type;
+            buildingComponent.Initialize();
+
+            buildings[type].Add(building);
+        }
+
+        private GameObject GetBuildingPrefab(BuildingType type)
+        {
+            return type switch
+            {
+                BuildingType.Restaurant => restaurantPrefab,
+                BuildingType.Factory => factoryPrefab,
+                BuildingType.Farm => farmPrefab,
+                _ => null
+            };
         }
 
         public Agent CreateAgent()
@@ -265,52 +419,40 @@ namespace CamelSociety.Core
 
         private void UpdateResources()
         {
-            if (Time.time >= nextResourceSpawnTime)
+            // 更新所有资源点
+            foreach (var resourceList in resourceObjects.Values)
             {
-                SpawnResource();
-                nextResourceSpawnTime = Time.time + resourceSpawnInterval;
-            }
-        }
-
-        private void SpawnResource()
-        {
-            if (availableResources.Count == 0) return;
-
-            ResourceType resourceType = availableResources[Random.Range(0, availableResources.Count)];
-
-            GameObject resourceObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            resourceObj.name = $"Resource_{resourceType}";
-            resourceObj.transform.SetParent(transform);
-
-            Vector3 randomPosition = new Vector3(
-                Random.Range(-resourceSpawnRange, resourceSpawnRange),
-                0.5f,
-                Random.Range(-resourceSpawnRange, resourceSpawnRange)
-            );
-            resourceObj.transform.position = randomPosition;
-
-            resourceObj.transform.localScale = Vector3.one * 0.5f;
-
-            Renderer renderer = resourceObj.GetComponent<Renderer>();
-            if (renderer)
-            {
-                Material material = resourceMat;
-                Color color = resourceType switch
+                foreach (var resourceObj in resourceList)
                 {
-                    ResourceType.Food => Color.yellow,
-                    ResourceType.Wood => new Color(0.5f, 0.3f, 0.2f),
-                    ResourceType.Stone => Color.gray,
-                    ResourceType.Gold => Color.yellow,
-                    ResourceType.Knowledge => Color.cyan,
-                    _ => Color.white
-                };
-                material.color = color;
-                renderer.material = material;
+                    if (resourceObj == null) continue;
+                    
+                    ResourceObject resource = resourceObj.GetComponent<ResourceObject>();
+                    if (resource != null)
+                    {
+                        // 资源再生
+                        if (resource.amount < resource.maxAmount)
+                        {
+                            resource.amount += resource.regenerationRate * Time.deltaTime;
+                            resource.amount = Mathf.Min(resource.amount, resource.maxAmount);
+                        }
+                    }
+                }
             }
 
-            ResourceObject resourceComponent = resourceObj.AddComponent<ResourceObject>();
-            resourceComponent.type = resourceType;
-            resourceComponent.amount = Random.Range(10f, 30f);
+            // 更新所有建筑
+            foreach (var buildingList in buildings.Values)
+            {
+                foreach (var building in buildingList)
+                {
+                    if (building == null) continue;
+
+                    Building buildingComponent = building.GetComponent<Building>();
+                    if (buildingComponent != null)
+                    {
+                        buildingComponent.UpdateProduction();
+                    }
+                }
+            }
         }
 
         private void ProcessSocialInteractions()

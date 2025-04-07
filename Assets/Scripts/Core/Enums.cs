@@ -8,11 +8,12 @@ namespace CamelSociety.Core
 
     public enum NeedType
     {
+        None,
         Food,
-        Shelter,
-        Safety,
+        Sleep,
+        Health,
         Social,
-        Development,
+        Culture,
         Entertainment,
         SelfActualization
     }
@@ -118,26 +119,48 @@ namespace CamelSociety.Core
     public enum ResourceType
     {
         // 基础资源
-        Food,
-        Water,
-        Energy,
-        RawMaterial,
-
-        Wood,
-        Stone,
-        Gold,
+        Money,          // 金钱
+        Food,           // 食物
+        Water,          // 水
+        Wood,           // 木材
+        Stone,          // 石材
+        Metal,          // 金属
+        Gold,           // 黄金
+        Coal,           // 煤炭
+        Energy,         // 能源
         
         // 加工资源
-        ProcessedFood,
-        IndustrialProduct,
-        MedicalSupply,
-        LuxuryItem,
+        ProcessedFood,  // 加工食品
+        RawMaterial,   // 原材料
+        ProcessedMaterial, // 加工材料
+        Furniture,     // 家具
+        Clothes,       // 衣物
+        Tools,         // 工具
         
-        // 虚拟资源
-        Money,
-        Stock,
-        Bond,
-        Data,
-        Knowledge
+        // 高级资源
+        Electronics,   // 电子产品
+        Machinery,     // 机械
+        Medicine,      // 药品
+        Luxury,        // 奢侈品
+        Artwork,       // 艺术品
+        Vehicle,       // 交通工具
+        Data,          // 数据
+        Computer,      // 计算机
+        Robot,         // 机器人
+        
+        // 特殊资源
+        Knowledge,     // 知识
+        Culture,       // 文化
+        Innovation,    // 创新
+        Entertainment, // 娱乐
+        Education,     // 教育
+        Healthcare,    // 医疗服务
+        Stock,         // 股票
+        Bond,          // 债券
+        
+        // 社会资源
+        Influence,     // 影响力
+        Reputation,    // 声望
+        SocialCapital  // 社会资本
     }
 } 
