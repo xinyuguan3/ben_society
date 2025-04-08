@@ -1227,7 +1227,7 @@ namespace CamelSociety.Core
             float totalMatch = 0f;
             int skillCount = 0;
 
-            foreach (var skillReq in career.skillLevels)
+            foreach (var skillReq in career.requiredSkills)
             {
                 if (skillLevels.ContainsKey(skillReq.Key))
                 {
