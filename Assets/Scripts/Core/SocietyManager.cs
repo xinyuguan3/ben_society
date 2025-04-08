@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
-
+using UnityEngine.AI;
 namespace CamelSociety.Core
 {
     public class SocietyManager : MonoBehaviour
@@ -160,6 +160,8 @@ namespace CamelSociety.Core
                 buildings[type] = new List<GameObject>();
             }
 
+            
+
             // 生成初始资源
             SpawnInitialResources();
             
@@ -169,6 +171,14 @@ namespace CamelSociety.Core
 
         private void SpawnInitialResources()
         {
+            
+            availableResources = new List<ResourceType>(){
+                ResourceType.Food,
+                ResourceType.Wood,
+                ResourceType.Stone,
+                ResourceType.Metal,
+                ResourceType.Gold
+            };
             // 为每种资源类型生成多个资源点
             foreach (ResourceType resourceType in availableResources)
             {
@@ -202,7 +212,7 @@ namespace CamelSociety.Core
             
             return new Vector3(
                 Mathf.Cos(angle * Mathf.Deg2Rad) * radius,
-                0.5f,
+                1f,
                 Mathf.Sin(angle * Mathf.Deg2Rad) * radius
             );
         }
@@ -213,7 +223,8 @@ namespace CamelSociety.Core
             resourceObj.name = $"Resource_{type}";
             resourceObj.transform.SetParent(transform);
             resourceObj.transform.position = position;
-            resourceObj.transform.localScale = Vector3.one * 0.5f;
+            // resourceObj.transform.localScale = Vector3.one * 0.5f;
+            // resourceObj.AddComponent<NavMeshObstacle>();
 
             // 设置材质和颜色
             Renderer renderer = resourceObj.GetComponent<Renderer>();

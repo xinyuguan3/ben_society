@@ -4,6 +4,10 @@ namespace CamelSociety
 {
     public class CameraController : MonoBehaviour
     {
+        [Header("Camera Settings")]
+        public float initialHeight = 50f;
+        public float initialAngle = 45f;
+        
         [Header("Movement Settings")]
         public float moveSpeed = 20f;
         public float zoomSpeed = 40f;
@@ -11,21 +15,31 @@ namespace CamelSociety
         
         [Header("Boundaries")]
         public float minHeight = 5f;
-        public float maxHeight = 30f;
+        public float maxHeight = 80f;
         public float minAngle = 20f;
         public float maxAngle = 80f;
         
-        private float currentRotation = 0f;
+        private void Start()
+        {
+            InitializeCamera();
+        }
+
+        private void InitializeCamera()
+        {
+            // 设置初始位置和角度
+            transform.position = new Vector3(0, initialHeight, -initialHeight);
+            transform.rotation = Quaternion.Euler(initialAngle, 0, 0);
+        }
         
         private void Update()
         {
             HandleMovement();
             HandleZoom();
-            HandleRotation();
         }
         
         private void HandleMovement()
         {
+            // WASD移动
             float horizontal = Input.GetAxis("Horizontal");
             float vertical = Input.GetAxis("Vertical");
             
@@ -38,36 +52,23 @@ namespace CamelSociety
         
         private void HandleZoom()
         {
+            // 滚轮缩放
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-            Vector3 pos = transform.position;
-            
-            pos.y -= scroll * zoomSpeed * Time.deltaTime * 100f;
-            pos.y = Mathf.Clamp(pos.y, minHeight, maxHeight);
-            
-            // 调整z位置以保持视角
-            float angle = transform.eulerAngles.x * Mathf.Deg2Rad;
-            pos.z = -pos.y / Mathf.Tan(angle);
-            
-            transform.position = pos;
-        }
-        
-        private void HandleRotation()
-        {
-            // 按住右键旋转
-            if (Input.GetMouseButton(1))
+            if (scroll != 0)
             {
-                float mouseX = Input.GetAxis("Mouse X");
-                currentRotation += mouseX * rotateSpeed * Time.deltaTime;
-                transform.rotation = Quaternion.Euler(transform.eulerAngles.x, currentRotation, 0);
-            }
-            
-            // 按住中键调整俯仰角
-            if (Input.GetMouseButton(2))
-            {
-                float mouseY = Input.GetAxis("Mouse Y");
-                Vector3 angles = transform.eulerAngles;
-                angles.x = Mathf.Clamp(angles.x - mouseY * rotateSpeed * Time.deltaTime, minAngle, maxAngle);
-                transform.rotation = Quaternion.Euler(angles);
+                Vector3 pos = transform.position;
+                float targetHeight = pos.y - scroll * zoomSpeed;
+                targetHeight = Mathf.Clamp(targetHeight, minHeight, maxHeight);
+                
+                // 计算新的位置，保持视角
+                float angle = transform.eulerAngles.x * Mathf.Deg2Rad;
+                float zOffset = -targetHeight / Mathf.Tan(angle);
+                
+                transform.position = new Vector3(pos.x, targetHeight, pos.z);
+                // 调整Z轴位置以保持视角
+                Vector3 newPos = transform.position;
+                newPos.z = zOffset;
+                transform.position = newPos;
             }
         }
     }

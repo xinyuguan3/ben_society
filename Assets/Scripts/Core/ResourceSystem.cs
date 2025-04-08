@@ -238,6 +238,11 @@ namespace CamelSociety.Core
             agent.AddExperience(rule.requiredOccupation, Random.Range(1f, 3f));
         }
 
+        public Dictionary<ResourceType, float> GetTotalResources()
+        {
+            return resourceDefinitions.ToDictionary(pair => pair.Key, pair => pair.Value.baseValue);
+        }
+
         public void UpdateMarket()
         {
             foreach (var marketData in market.Values)
@@ -278,6 +283,14 @@ namespace CamelSociety.Core
                 market[type].supply += amount;
                 market[type].demand -= amount;
                 market[type].UpdatePrice(market[type].supply, market[type].demand);
+            }
+        }
+
+        public void ConsumeResource(ResourceType type, float amount)
+        {
+            if (resourceDefinitions.ContainsKey(type))
+            {
+                resourceDefinitions[type].baseValue -= amount;
             }
         }
 

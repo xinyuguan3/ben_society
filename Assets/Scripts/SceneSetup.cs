@@ -9,21 +9,15 @@ namespace CamelSociety
         public Material groundMaterial;
         public GameObject groundPrefab;
         
-        [Header("Camera Settings")]
-        public float cameraHeight = 50f;
-        public float cameraAngle = 45f;
-        
         private void Awake()
         {
             CreateGround();
-            SetupCamera();
             SetupLight();
         }
         
         private void CreateGround()
         {
             GameObject ground = Instantiate(groundPrefab);
-            // ground.transform.localScale = new Vector3(groundSize/10f, 1, groundSize/10f);
             
             if (groundMaterial != null)
             {
@@ -64,24 +58,6 @@ namespace CamelSociety
                 renderer.material.color = transparentColor;
                 renderer.material.SetFloat("_Mode", 3); // 设置为透明模式
             }
-        }
-        
-        private void SetupCamera()
-        {
-            Camera mainCamera = Camera.main;
-            if (mainCamera == null)
-            {
-                GameObject cameraObj = new GameObject("Main Camera");
-                mainCamera = cameraObj.AddComponent<Camera>();
-                cameraObj.tag = "MainCamera";
-            }
-            
-            // 设置相机位置和角度
-            mainCamera.transform.position = new Vector3(0, cameraHeight, -cameraHeight);
-            mainCamera.transform.rotation = Quaternion.Euler(cameraAngle, 0, 0);
-            
-            // 添加简单的相机控制
-            mainCamera.gameObject.AddComponent<CameraController>();
         }
         
         private void SetupLight()

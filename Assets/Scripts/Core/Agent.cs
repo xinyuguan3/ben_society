@@ -107,7 +107,6 @@ namespace CamelSociety.Core
         public float health = 100f;
         public float education;
         public List<Skill> skills = new List<Skill>();
-        public Personality personality;
         public Material agentMat;
         #endregion
 
@@ -124,9 +123,6 @@ namespace CamelSociety.Core
         #region 需求系统
         [Header("Needs")]
         public Dictionary<NeedType, Need> needs = new Dictionary<NeedType, Need>();
-        public float hunger;
-        public float energy;
-        public float happiness;
         public float needUpdateInterval = 1f;
         private float lastNeedUpdateTime;
         private Building targetConsumptionBuilding;
@@ -203,15 +199,24 @@ namespace CamelSociety.Core
         private float lastResourceCheckTime;
         private float resourceCheckInterval = 1f;
 
+        #region 性格系统
+        [Header("Personality System")]
+        public PersonalityMatrix personalityMatrix;
+        private float personalityUpdateInterval = 7f;
+        private float lastPersonalityUpdateTime;
+        private float relationshipSearchInterval = 5f;
+        private float lastRelationshipSearchTime;
+        private float relationshipThreshold = 0.7f;
+        private float romanticThreshold = 0.8f;
+        #endregion
+
         private void Awake()
         {
-            Debug.Log($"Agent {gameObject.name} Awake");
             InitializeComponents();
         }
 
         private void Start()
         {
-            Debug.Log($"Agent {gameObject.name} Start");
             InitializeAgent();
             SetRandomTarget();
         }
@@ -255,7 +260,6 @@ namespace CamelSociety.Core
 
         private void InitializeAgent()
         {
-            Debug.Log($"Agent {gameObject.name} InitializeAgent");
             
             // 初始化基础属性
             agentId = System.Guid.NewGuid().ToString();
@@ -271,14 +275,14 @@ namespace CamelSociety.Core
             prestige = Random.Range(0f, 100f);
             influence = Random.Range(0f, 100f);
 
+             // 设置外观
+            CreateVisuals();
+
             // 初始化各个系统
             InitializeNeeds();
             InitializePersonality();
             InitializeSkills();
             InitializeResources();
-            
-            // 设置外观
-            CreateVisuals();
 
             // 初始化DNA和思想体系
             InitializeIdeologySystem();
@@ -288,6 +292,15 @@ namespace CamelSociety.Core
 
             // 初始化职业系统
             InitializeCareer();
+
+            // 初始化性格矩阵
+            InitializePersonalityMatrix();
+        }
+
+        private void InitializePersonalityMatrix()
+        {
+            personalityMatrix = new PersonalityMatrix();
+            personalityMatrix.RandomizePersonality();
         }
 
         private void InitializeInventory()
@@ -405,6 +418,8 @@ namespace CamelSociety.Core
             UpdateIdeology();
             UpdateCareer();
             UpdateResourceCollection();
+            UpdatePersonality();
+            SearchForRelationships();
 
             // 如果到达了目标建筑，存放资源
             if (assignedBuilding != null && Vector3.Distance(transform.position, assignedBuilding.transform.position) <= 1f)
@@ -418,6 +433,23 @@ namespace CamelSociety.Core
             {
                 ConsumeAtBuilding();
             }
+        }
+
+        private void InitializeNeeds()
+        {
+            // 初始化所有需求类型
+            foreach (NeedType needType in System.Enum.GetValues(typeof(NeedType)))
+            {
+                needs[needType] = new Need(needType, 0f, 100f, 0f);
+            }
+            
+            // 设置初始随机值
+            needs[NeedType.Food].value = Random.Range(20f, 40f);      // 饥饿度
+            needs[NeedType.Sleep].value = Random.Range(60f, 80f);      // 能量
+            needs[NeedType.Entertainment].value = Random.Range(40f, 60f); // 娱乐需求
+            needs[NeedType.Social].value = Random.Range(30f, 70f);      // 社交需求
+            needs[NeedType.Health].value = Random.Range(70f, 90f);      // 健康
+            needs[NeedType.Culture].value = Random.Range(40f, 60f);     // 文化需求
         }
 
         private void UpdateNeeds()
@@ -529,7 +561,7 @@ namespace CamelSociety.Core
                         if (targetConsumptionBuilding.RequestResource(ResourceType.ProcessedFood, foodAmount) > 0)
                         {
                             needs[NeedType.Food].value = Mathf.Max(0, needs[NeedType.Food].value - 40f);
-                            happiness += 10f;
+                            needs[NeedType.Happiness].value += 10f;
                         }
                     }
                     break;
@@ -538,7 +570,7 @@ namespace CamelSociety.Core
                     if (targetConsumptionBuilding.type == BuildingType.Hospital)
                     {
                         needs[NeedType.Health].value = Mathf.Min(needs[NeedType.Health].value + 30f, 100f);
-                        happiness += 5f;
+                        needs[NeedType.Happiness].value += 5f;
                     }
                     break;
 
@@ -546,7 +578,7 @@ namespace CamelSociety.Core
                     if (targetConsumptionBuilding.type == BuildingType.Entertainment)
                     {
                         needs[NeedType.Entertainment].value = Mathf.Min(needs[NeedType.Entertainment].value + 40f, 100f);
-                        happiness += 15f;
+                        needs[NeedType.Happiness].value += 15f;
                     }
                     break;
 
@@ -554,7 +586,7 @@ namespace CamelSociety.Core
                     if (targetConsumptionBuilding.type == BuildingType.CulturalCenter)
                     {
                         needs[NeedType.Culture].value = Mathf.Min(needs[NeedType.Culture].value + 35f, 100f);
-                        happiness += 12f;
+                        needs[NeedType.Happiness].value += 12f;
                         education += 2f;
                     }
                     break;
@@ -563,7 +595,7 @@ namespace CamelSociety.Core
                     if (targetConsumptionBuilding.type == BuildingType.SocialCenter)
                     {
                         needs[NeedType.Social].value = Mathf.Min(needs[NeedType.Social].value + 30f, 100f);
-                        happiness += 8f;
+                        needs[NeedType.Happiness].value += 8f;
                     }
                     break;
             }
@@ -884,20 +916,47 @@ namespace CamelSociety.Core
         #endregion
 
         #region 社交系统
-        protected virtual void InitializeNeeds()
-        {
-            // 初始化基本需求
-            needs[NeedType.Food].value = Random.Range(20f, 40f);      // 饥饿度
-            needs[NeedType.Sleep].value = Random.Range(60f, 80f);      // 能量
-            needs[NeedType.Entertainment].value = Random.Range(40f, 60f); // 娱乐需求
-            needs[NeedType.Social].value = Random.Range(30f, 70f);      // 社交需求
-            needs[NeedType.Health].value = Random.Range(70f, 90f);      // 健康
-            needs[NeedType.Culture].value = Random.Range(40f, 60f);     // 文化需求
-        }
-
         protected virtual void InitializePersonality()
         {
-            personality = new Personality();
+            personalityMatrix = new PersonalityMatrix();
+            personalityMatrix.RandomizePersonality();
+
+            // 根据社会阶层调整某些特质
+            AdjustPersonalityByClass();
+        }
+
+        private void AdjustPersonalityByClass()
+        {
+            switch (socialClass)
+            {
+                case SocialClass.WorkingClass:
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.PracticalThinking, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.PracticalThinking) + 0.2f);
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.Persistence, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.Persistence) + 0.2f);
+                    break;
+
+                case SocialClass.MiddleClass:
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.Achievement, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.Achievement) + 0.2f);
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.IntellectualInterest, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.IntellectualInterest) + 0.2f);
+                    break;
+
+                case SocialClass.UpperClass:
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.Leadership, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.Leadership) + 0.2f);
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.SocialInfluence, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.SocialInfluence) + 0.2f);
+                    break;
+
+                case SocialClass.RulingClass:
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.Power, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.Power) + 0.3f);
+                    personalityMatrix.SetDimensionValue(PersonalityDimension.Leadership, 
+                        personalityMatrix.GetDimensionValue(PersonalityDimension.Leadership) + 0.3f);
+                    break;
+            }
         }
 
         protected virtual void InitializeSkills()
@@ -1440,6 +1499,88 @@ namespace CamelSociety.Core
 
             // 完成存放后重置目标建筑
             assignedBuilding = null;
+        }
+
+        private void UpdatePersonality()
+        {
+            if (Time.time - lastPersonalityUpdateTime < personalityUpdateInterval)
+                return;
+
+            lastPersonalityUpdateTime = Time.time;
+
+            // 根据经历更新性格
+            foreach (var relationship in relationships.Values)
+            {
+                // 关系影响性格
+                if (relationship.intimacy > 0.7f)
+                {
+                    Agent other = FindAgentById(relationship.targetAgentId);
+                    if (other != null)
+                    {
+                        // 性格互相影响
+                        float influenceStrength = relationship.intimacy * 0.1f;
+                        foreach (PersonalityDimension dimension in System.Enum.GetValues(typeof(PersonalityDimension)))
+                        {
+                            float currentValue = personalityMatrix.GetDimensionValue(dimension);
+                            float otherValue = other.personalityMatrix.GetDimensionValue(dimension);
+                            float newValue = Mathf.Lerp(currentValue, otherValue, influenceStrength);
+                            personalityMatrix.SetDimensionValue(dimension, newValue);
+                        }
+                    }
+                }
+            }
+
+            // 工作经历对性格的影响
+            if (currentCareerId != null)
+            {
+                var career = CareerSystem.Instance.careerDefinitions[currentCareerId];
+                foreach (var pref in career.personalityPreferences)
+                {
+                    float currentValue = personalityMatrix.GetDimensionValue((PersonalityDimension)System.Enum.Parse(typeof(PersonalityDimension), pref.Key));
+                    float targetValue = pref.Value;
+                    float newValue = Mathf.Lerp(currentValue, targetValue, 0.1f);
+                    personalityMatrix.SetDimensionValue((PersonalityDimension)System.Enum.Parse(typeof(PersonalityDimension), pref.Key), newValue);
+                }
+            }
+        }
+
+        private void SearchForRelationships()
+        {
+            if (Time.time - lastRelationshipSearchTime < relationshipSearchInterval)
+                return;
+
+            lastRelationshipSearchTime = Time.time;
+
+            // 寻找附近的Agent
+            Collider[] colliders = Physics.OverlapSphere(transform.position, 10f);
+            foreach (Collider collider in colliders)
+            {
+                Agent other = collider.GetComponent<Agent>();
+                if (other != null && other != this)
+                {
+                    // 计算兼容性
+                    float compatibility = personalityMatrix.CalculateCompatibility(other.personalityMatrix, RelationType.Friend);
+                    
+                    // 如果兼容性高，尝试建立关系
+                    if (compatibility > relationshipThreshold)
+                    {
+                        if (!relationships.ContainsKey(other.agentId))
+                        {
+                            // 检查是否可能发展为恋人关系
+                            float romanticCompatibility = personalityMatrix.CalculateCompatibility(other.personalityMatrix, RelationType.Lover);
+                            RelationType relationType = romanticCompatibility > romanticThreshold ? RelationType.Lover : RelationType.Friend;
+                            
+                            AddSocialRelation(other.agentId, relationType);
+                            Debug.Log($"Agent {agentName} 与 {other.agentName} 建立了新的{relationType}关系");
+                        }
+                    }
+                }
+            }
+        }
+
+        private Agent FindAgentById(string id)
+        {
+            return FindObjectsOfType<Agent>().FirstOrDefault(a => a.agentId == id);
         }
     }
 } 

@@ -10,6 +10,7 @@ namespace CamelSociety.Core
         public BuildingType type;
         public BuildingState state;
         public BuildingData data;
+        public BuildingRequirements requirements;
         public float constructionProgress;
         public float efficiency = 1f;
 
@@ -70,6 +71,13 @@ namespace CamelSociety.Core
 
         public void Initialize()
         {
+            InitializeInventory();
+        }
+
+        public void Initialize(BuildingType type, BuildingRequirements requirements)
+        {
+            this.type = type;
+            this.requirements = requirements;
             InitializeInventory();
         }
 

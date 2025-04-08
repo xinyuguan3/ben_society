@@ -62,11 +62,25 @@ MonoBehaviour:
   hunger: 0
   energy: 0
   happiness: 0
+  needUpdateInterval: 1
+  resourceCapacity: 1000
   moveSpeed: 2
   rotateSpeed: 10
   resourceDetectionRange: 5
   interactionRange: 1.5
   wanderRadius: 10
+  moralityValue: 50
+  culturalIdentity: 50
+  innovationDrive: 50
+  socialInfluence: 0
+  networkInfluence: 0
+  maxRelations: 50
+  currentCareerId: 
+  careerExperience: 0
+  jobSatisfaction: 0
+  resourceCollectionSpeed: 1
+  carryCapacity: 50
+  assignedBuilding: {fileID: 0}
 --- !u!212 &2319376033097582716
 SpriteRenderer:
   m_ObjectHideFlags: 0

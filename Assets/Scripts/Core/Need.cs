@@ -12,9 +12,12 @@ namespace CamelSociety.Core
         public float urgency;      // 紧急程度
         public float priority;     // 优先级
 
-        public Need(NeedType type)
+        public Need(NeedType type,float value=0f,float maxValue=100f,float minValue=0f)
         {
             this.type = type;
+            this.value = value;
+            this.maxValue = maxValue;
+            this.minValue = minValue;
             InitializeNeedParameters();
         }
 

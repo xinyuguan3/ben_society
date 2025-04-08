@@ -12,6 +12,7 @@ namespace CamelSociety.Core
         Food,
         Sleep,
         Health,
+        Happiness,
         Social,
         Culture,
         Entertainment,
@@ -40,7 +41,9 @@ namespace CamelSociety.Core
         Lover,          // 恋人
         Spouse,         // 配偶
         Student,        // 学生
-        Teacher         // 老师
+        Teacher,        // 老师
+        Business,       // 商业伙伴
+        Other           // 其他
     }
 
 

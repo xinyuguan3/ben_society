@@ -22,8 +22,8 @@ namespace CamelSociety.UI
         public TextMeshProUGUI occupationText;
 
         [Header("需求状态")]
-        public TextMeshProUGUI hungerText;
-        public TextMeshProUGUI energyText;
+        public TextMeshProUGUI foodText;
+        public TextMeshProUGUI sleepText;
         public TextMeshProUGUI happinessText;
         public TextMeshProUGUI needsText;
         public TextMeshProUGUI needsContainer;
@@ -86,14 +86,14 @@ namespace CamelSociety.UI
                 influenceText.text = $"影响力: {currentAgent.influence:F1}";
 
             // 更新需求状态
-            if (hungerText != null)
-                hungerText.text = $"饥饿度: {currentAgent.hunger:F1}";
+            if (foodText != null)
+                foodText.text = $"饥饿度: {currentAgent.needs[NeedType.Food].value:F1}";
             
-            if (energyText != null)
-                energyText.text = $"体力: {currentAgent.energy:F1}";
+            if (sleepText != null)
+                sleepText.text = $"睡眠: {currentAgent.needs[NeedType.Sleep].value:F1}";
             
             if (happinessText != null)
-                happinessText.text = $"幸福度: {currentAgent.happiness:F1}";
+                happinessText.text = $"幸福度: {currentAgent.needs[NeedType.Happiness].value:F1}";
 
             if (needsText != null)
             {
