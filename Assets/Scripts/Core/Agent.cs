@@ -235,17 +235,19 @@ namespace CamelSociety.Core
                 navMeshAgent = gameObject.AddComponent<NavMeshAgent>();
             }
 
-            // 设置NavMeshAgent参数
-            navMeshAgent.radius = 0.3f;
+            // 优化NavMeshAgent参数
+            navMeshAgent.radius = 0.5f;  // 增加半径，避免过于拥挤
             navMeshAgent.height = 2f;
             navMeshAgent.speed = moveSpeed;
             navMeshAgent.angularSpeed = rotateSpeed;
             navMeshAgent.acceleration = 8f;
-            navMeshAgent.stoppingDistance = 0.1f;
+            navMeshAgent.stoppingDistance = 0.5f;  // 增加停止距离
             navMeshAgent.autoBraking = true;
+            navMeshAgent.avoidancePriority = Random.Range(0, 100);  // 随机避让优先级
+            navMeshAgent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;  // 高质量避障
 
             agentCollider.height = 2f;
-            agentCollider.radius = 0.3f;
+            agentCollider.radius = 0.5f;  // 与NavMeshAgent半径保持一致
             agentCollider.center = Vector3.up;
 
             if (visualParent == null)
@@ -647,9 +649,7 @@ namespace CamelSociety.Core
         {
             if (Vector3.Distance(transform.position, targetPosition) < 0.1f)
             {
-                Debug.Log($"Agent {gameObject.name} SetRandomTarget");
                 SetRandomTarget();
-                Debug.Log($"Agent {gameObject.name} Wander to {targetPosition}");
             }
 
             Move();
@@ -737,10 +737,30 @@ namespace CamelSociety.Core
             Vector3 newTarget = Vector3.zero;
             bool validTarget = false;
 
+            // 获取当前位置到中心点的距离
+            float distanceToCenter = Vector3.Distance(transform.position, Vector3.zero);
+
             for (int i = 0; i < maxAttempts; i++)
             {
                 float randomAngle = Random.Range(0f, 360f);
-                float randomRadius = Random.Range(2f, range);
+                float randomRadius;
+                
+                // 如果太靠近中心，倾向于向外移动
+                if (distanceToCenter < range * 0.2f)
+                {
+                    randomRadius = Random.Range(range * 0.4f, range);
+                }
+                // 如果太远离中心，适当向内移动
+                else if (distanceToCenter > range * 0.8f)
+                {
+                    randomRadius = Random.Range(range * 0.2f, range * 0.6f);
+                }
+                // 在正常范围内随机移动
+                else
+                {
+                    randomRadius = Random.Range(range * 0.2f, range);
+                }
+
                 newTarget = new Vector3(
                     Mathf.Cos(randomAngle * Mathf.Deg2Rad) * randomRadius,
                     0,
@@ -749,7 +769,7 @@ namespace CamelSociety.Core
 
                 // 使用NavMesh.SamplePosition找到最近的可行走位置
                 NavMeshHit hit;
-                if (NavMesh.SamplePosition(newTarget, out hit, 5f, NavMesh.AllAreas))
+                if (NavMesh.SamplePosition(transform.position + newTarget, out hit, 5f, NavMesh.AllAreas))
                 {
                     newTarget = hit.position;
                     validTarget = true;
@@ -761,24 +781,25 @@ namespace CamelSociety.Core
             if (!validTarget)
             {
                 NavMeshHit hit;
-                if (NavMesh.SamplePosition(transform.position + Random.insideUnitSphere * 5f, out hit, 5f, NavMesh.AllAreas))
+                Vector3 randomOffset = Random.insideUnitSphere * 5f;
+                randomOffset.y = 0;
+                if (NavMesh.SamplePosition(transform.position + randomOffset, out hit, 5f, NavMesh.AllAreas))
                 {
                     newTarget = hit.position;
                 }
-
             }
 
             targetPosition = newTarget;
             
-            // 随机返回中心点
-            if (Random.value < 0.3f)
-            {
-                NavMeshHit hit;
-                if (NavMesh.SamplePosition(Vector3.zero, out hit, 5f, NavMesh.AllAreas))
-                {
-                    targetPosition = hit.position;
-                }
-            }
+            // 移除总是返回中心点的逻辑
+            // if (Random.value < 0.3f)
+            // {
+            //     NavMeshHit hit;
+            //     if (NavMesh.SamplePosition(Vector3.zero, out hit, 5f, NavMesh.AllAreas))
+            //     {
+            //         targetPosition = hit.position;
+            //     }
+            // }
         }
 
         #region 资源管理
@@ -1506,41 +1527,114 @@ namespace CamelSociety.Core
             if (Time.time - lastPersonalityUpdateTime < personalityUpdateInterval)
                 return;
 
+            if (personalityMatrix == null)
+            {
+                Debug.LogWarning($"Agent {gameObject.name}: personalityMatrix is null");
+                return;
+            }
+
             lastPersonalityUpdateTime = Time.time;
+
+            // 确保relationships已初始化
+            if (relationships == null)
+            {
+                Debug.LogWarning($"Agent {gameObject.name}: relationships dictionary was null, initializing");
+                relationships = new Dictionary<string, Relationship>();
+            }
 
             // 根据经历更新性格
             foreach (var relationship in relationships.Values)
             {
-                // 关系影响性格
+                if (relationship == null)
+                {
+                    Debug.LogWarning($"Agent {gameObject.name}: Found null relationship in relationships dictionary");
+                    continue;
+                }
+
                 if (relationship.intimacy > 0.7f)
                 {
                     Agent other = FindAgentById(relationship.targetAgentId);
-                    if (other != null)
+                    if (other == null)
                     {
-                        // 性格互相影响
-                        float influenceStrength = relationship.intimacy * 0.1f;
-                        foreach (PersonalityDimension dimension in System.Enum.GetValues(typeof(PersonalityDimension)))
-                        {
-                            float currentValue = personalityMatrix.GetDimensionValue(dimension);
-                            float otherValue = other.personalityMatrix.GetDimensionValue(dimension);
-                            float newValue = Mathf.Lerp(currentValue, otherValue, influenceStrength);
-                            personalityMatrix.SetDimensionValue(dimension, newValue);
-                        }
+                        Debug.LogWarning($"Agent {gameObject.name}: Could not find agent with ID {relationship.targetAgentId}");
+                        continue;
+                    }
+
+                    if (other.personalityMatrix == null)
+                    {
+                        Debug.LogWarning($"Agent {gameObject.name}: Target agent {other.gameObject.name} has null personalityMatrix");
+                        continue;
+                    }
+
+                    // 性格互相影响
+                    float influenceStrength = relationship.intimacy * 0.1f;
+                    foreach (PersonalityDimension dimension in System.Enum.GetValues(typeof(PersonalityDimension)))
+                    {
+                        float currentValue = personalityMatrix.GetDimensionValue(dimension);
+                        float otherValue = other.personalityMatrix.GetDimensionValue(dimension);
+                        float newValue = Mathf.Lerp(currentValue, otherValue, influenceStrength);
+                        personalityMatrix.SetDimensionValue(dimension, newValue);
                     }
                 }
             }
 
             // 工作经历对性格的影响
-            if (currentCareerId != null)
+            if (string.IsNullOrEmpty(currentCareerId))
             {
-                var career = CareerSystem.Instance.careerDefinitions[currentCareerId];
-                foreach (var pref in career.personalityPreferences)
+                Debug.LogWarning($"Agent {gameObject.name}: currentCareerId is null or empty");
+                return;
+            }
+
+            if (CareerSystem.Instance == null)
+            {
+                Debug.LogWarning($"Agent {gameObject.name}: CareerSystem.Instance is null");
+                return;
+            }
+
+            if (CareerSystem.Instance.careerDefinitions == null)
+            {
+                Debug.LogWarning($"Agent {gameObject.name}: CareerSystem.Instance.careerDefinitions is null");
+                return;
+            }
+
+            if (!CareerSystem.Instance.careerDefinitions.ContainsKey(currentCareerId))
+            {
+                Debug.LogWarning($"Agent {gameObject.name}: No career definition found for ID {currentCareerId}");
+                return;
+            }
+
+            var career = CareerSystem.Instance.careerDefinitions[currentCareerId];
+            if (career == null)
+            {
+                Debug.LogWarning($"Agent {gameObject.name}: Career definition is null for ID {currentCareerId}");
+                return;
+            }
+
+            if (career.personalityPreferences == null)
+            {
+                Debug.LogWarning($"Agent {gameObject.name}: personalityPreferences is null for career {currentCareerId}");
+                return;
+            }
+
+            foreach (var pref in career.personalityPreferences)
+            {
+                if (string.IsNullOrEmpty(pref.Key))
                 {
-                    float currentValue = personalityMatrix.GetDimensionValue((PersonalityDimension)System.Enum.Parse(typeof(PersonalityDimension), pref.Key));
-                    float targetValue = pref.Value;
-                    float newValue = Mathf.Lerp(currentValue, targetValue, 0.1f);
-                    personalityMatrix.SetDimensionValue((PersonalityDimension)System.Enum.Parse(typeof(PersonalityDimension), pref.Key), newValue);
+                    Debug.LogWarning($"Agent {gameObject.name}: Found null or empty personality preference key in career {currentCareerId}");
+                    continue;
                 }
+                
+                PersonalityDimension dimension;
+                if (!System.Enum.TryParse(pref.Key, out dimension))
+                {
+                    Debug.LogWarning($"Agent {gameObject.name}: Could not parse personality dimension {pref.Key}");
+                    continue;
+                }
+
+                float currentValue = personalityMatrix.GetDimensionValue(dimension);
+                float targetValue = pref.Value;
+                float newValue = Mathf.Lerp(currentValue, targetValue, 0.1f);
+                personalityMatrix.SetDimensionValue(dimension, newValue);
             }
         }
 

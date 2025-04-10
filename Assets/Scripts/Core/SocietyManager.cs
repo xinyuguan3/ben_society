@@ -208,7 +208,7 @@ namespace CamelSociety.Core
         {
             // 根据资源类型决定生成位置（可以实现特定资源在特定区域生成）
             float angle = Random.Range(0f, 360f);
-            float radius = Random.Range(10f, resourceSpawnRange);
+            float radius = Random.Range(0f, resourceSpawnRange);
             
             return new Vector3(
                 Mathf.Cos(angle * Mathf.Deg2Rad) * radius,
@@ -223,7 +223,7 @@ namespace CamelSociety.Core
             resourceObj.name = $"Resource_{type}";
             resourceObj.transform.SetParent(transform);
             resourceObj.transform.position = position;
-            // resourceObj.transform.localScale = Vector3.one * 0.5f;
+            resourceObj.transform.localScale = Vector3.one * 0.5f;
             // resourceObj.AddComponent<NavMeshObstacle>();
 
             // 设置材质和颜色
@@ -252,7 +252,7 @@ namespace CamelSociety.Core
             {
                 ResourceType.Food => Color.green,
                 ResourceType.Wood => new Color(0.5f, 0.3f, 0.2f),
-                ResourceType.Stone => Color.gray,
+                ResourceType.Stone => new Color(168/255f, 164/255f, 153/255f),
                 ResourceType.Metal => Color.blue,
                 ResourceType.Gold => Color.yellow,
                 ResourceType.ProcessedFood => new Color(1f, 0.8f, 0.2f),
